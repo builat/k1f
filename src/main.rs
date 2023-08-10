@@ -2,7 +2,6 @@ use teloxide::prelude::*;
 
 mod commands;
 
-
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();

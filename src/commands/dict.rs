@@ -1,6 +1,6 @@
 use teloxide::types::ParseMode::MarkdownV2;
 use teloxide::{prelude::*, utils::command::BotCommands};
-
+use crate::commands::ping;
 use crate::commands::uuid::{gun, gus};
 
 #[derive(BotCommands, Clone)]
@@ -17,6 +17,8 @@ pub enum Command {
     GuN(u8),
     #[command(description = "Generate single uuid v4.")]
     GuS,
+    #[command(description = "PING")]
+    PING(String),
 }
 
 async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
@@ -37,6 +39,13 @@ async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
         Command::GuS => {
             bot.send_message(msg.chat.id, gus())
                 .parse_mode(MarkdownV2)
+                .await?
+        }
+        Command::PING(target) => {
+            let result = ping::ping(&target);
+            println!("{:?}", result);
+            bot.send_message(msg.chat.id, result)
+                //.parse_mode(MarkdownV2)
                 .await?
         }
     };
