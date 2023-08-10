@@ -1,4 +1,5 @@
 use pinger::PingResult;
+use std::net::Ipv4Addr;
 use url::Url;
 
 fn ping_formatter(ping_result: PingResult) -> String {
@@ -10,20 +11,34 @@ fn ping_formatter(ping_result: PingResult) -> String {
     }
 }
 
-fn handle_ping_input(user_input: &str) -> Result<String, String> {
-    let host = match user_input {
+fn limit_ips(ip_str: &str) -> &str {
+    match ip_str {
         "0.0.0.0" => "Go ping yourself",
         "localhost" => "Nice try!",
         "192.168.1.1" => "Nope",
-        ok => ok,
-    }.to_string();
-
-    if !host.contains("://") {
-        return Ok(host);
+        host => host,
     }
-    Url::parse(&host)
-        .map(|parsed| parsed.host_str().unwrap_or("No host found").to_string())
-        .map_err(|_| String::from("Not a host"))
+}
+
+fn handle_ping_input(user_input: &str) -> Result<String, String> {
+    let host = Url::parse(user_input)
+        .map(|parsed| {
+            match parsed.host_str() {
+                Some(result) => result,
+                None => "No target host found",
+            }
+            .to_string()
+        })
+        .map_err(|_| String::from("Bad url"));
+
+    return if host.is_err() {
+        match String::from(user_input).parse::<Ipv4Addr>() {
+            Ok(_) => Ok(String::from(limit_ips(user_input))),
+            Err(_) => Err(String::from("Not a host")),
+        }
+    } else {
+        host
+    };
 }
 
 pub fn ping(addr: &str) -> String {

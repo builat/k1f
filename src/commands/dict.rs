@@ -1,7 +1,7 @@
-use teloxide::types::ParseMode::MarkdownV2;
-use teloxide::{prelude::*, utils::command::BotCommands};
 use crate::commands::ping;
 use crate::commands::uuid::{gun, gus};
+use teloxide::types::ParseMode::MarkdownV2;
+use teloxide::{prelude::*, utils::command::BotCommands};
 
 #[derive(BotCommands, Clone)]
 #[command(
