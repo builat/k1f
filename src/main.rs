@@ -10,4 +10,3 @@ async fn main() {
     let bot = Bot::from_env();
     commands::dict::init_bot(bot).await;
 }
-
