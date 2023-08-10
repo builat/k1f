@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 teloxide = { version = "0.12", features = ["macros"] }
 log = "0.4.19"
+pinger = "0.13.0"
+futures = "0.3.28"
 uuid = "1.4.1"
 pretty_env_logger = "0.5.0"
 tokio = { version ="1.29.1", features = ["rt-multi-thread", "macros"] }
