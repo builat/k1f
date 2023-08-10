@@ -1,4 +1,5 @@
 use pinger::PingResult;
+use url::Url;
 
 fn ping_formatter(ping_result: PingResult) -> String {
     match ping_result {
@@ -9,13 +10,20 @@ fn ping_formatter(ping_result: PingResult) -> String {
     }
 }
 
-fn handle_ping_input(user_input: &str) -> Result<&str, &str> {
-    return match user_input {
-        "0.0.0.0" => Err("Go ping yourself"),
-        "localhost" => Err("Nice try!"),
-        "192.168.1.1" => Err("Nope"),
-        ok => Ok(ok),
-    };
+fn handle_ping_input(user_input: &str) -> Result<String, String> {
+    let host = match user_input {
+        "0.0.0.0" => "Go ping yourself",
+        "localhost" => "Nice try!",
+        "192.168.1.1" => "Nope",
+        ok => ok,
+    }.to_string();
+
+    if !host.contains("://") {
+        return Ok(host);
+    }
+    Url::parse(&host)
+        .map(|parsed| parsed.host_str().unwrap_or("No host found").to_string())
+        .map_err(|_| String::from("Not a host"))
 }
 
 pub fn ping(addr: &str) -> String {
@@ -39,4 +47,3 @@ pub fn ping(addr: &str) -> String {
 
     return ping_formatter(ping_result);
 }
-
