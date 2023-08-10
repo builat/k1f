@@ -610,6 +610,7 @@ dependencies = [
  "pretty_env_logger",
  "teloxide",
  "tokio",
+ "url",
  "uuid",
 ]
 
