@@ -42,10 +42,7 @@ async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
                 .await?
         }
         Command::PING(target) => {
-            let result = ping::ping(&target);
-            println!("{:?}", result);
-            bot.send_message(msg.chat.id, result)
-                //.parse_mode(MarkdownV2)
+            bot.send_message(msg.chat.id, ping::ping(&target))
                 .await?
         }
     };
