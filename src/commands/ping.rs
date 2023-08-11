@@ -1,6 +1,11 @@
+use crate::commands::errors::BotPingError;
+use lazy_regex::regex;
 use pinger::PingResult;
 use std::net::Ipv4Addr;
 use url::Url;
+
+static IP_RE: &lazy_regex::Lazy<lazy_regex::Regex> =
+    regex!(r"^\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}$");
 
 fn ping_formatter(ping_result: PingResult) -> String {
     match ping_result {
@@ -11,54 +16,48 @@ fn ping_formatter(ping_result: PingResult) -> String {
     }
 }
 
-fn limit_ips(ip_str: &str) -> &str {
-    match ip_str {
-        "0.0.0.0" => "Go ping yourself",
-        "localhost" => "Nice try!",
-        "192.168.1.1" => "Nope",
-        host => host,
+fn extract_host_from_url(user_input: String) -> Result<String, BotPingError> {
+    fn match_input_result_option(parsed: Url) -> String {
+        match parsed.host_str() {
+            Some(result) => result,
+            None => "No target host found",
+        }
+        .to_string()
+    }
+
+    Url::parse(&user_input)
+        .map(match_input_result_option)
+        .map_err(|_| BotPingError::BadUrl)
+}
+
+fn extract_host_from_ip(user_input: &String) -> Result<String, BotPingError> {
+    match String::from(user_input).parse::<Ipv4Addr>() {
+        Ok(_) => Ok(String::from(user_input)),
+        Err(_) => Err(BotPingError::NotAHost),
     }
 }
 
-fn handle_ping_input(user_input: &str) -> Result<String, String> {
-    let host = Url::parse(user_input)
-        .map(|parsed| {
-            match parsed.host_str() {
-                Some(result) => result,
-                None => "No target host found",
-            }
-            .to_string()
-        })
-        .map_err(|_| String::from("Bad url"));
-
-    return if host.is_err() {
-        match String::from(user_input).parse::<Ipv4Addr>() {
-            Ok(_) => Ok(String::from(limit_ips(user_input))),
-            Err(_) => Err(String::from("Not a host")),
-        }
-    } else {
-        host
-    };
+fn handle_ping_input(user_input: &str) -> Result<String, BotPingError> {
+    match String::from(user_input.trim()) {
+        host if host.contains("://") => extract_host_from_url(host),
+        host if IP_RE.is_match(&host) => extract_host_from_ip(&host),
+        host => Ok(host),
+    }
 }
 
 pub fn ping(addr: &str) -> String {
-    let validated_input = handle_ping_input(addr);
-    if validated_input.is_err() {
-        return format!("{}", validated_input.unwrap_err());
-    }
-    let reciever_result = pinger::ping(format!("{}", validated_input.unwrap()), None);
-
-    if reciever_result.is_err() {
-        return format!("Bad response from host");
-    }
-
-    let reciever = reciever_result.expect("to be ok").recv();
-
-    if reciever.is_err() {
-        return format!("Bad pinger response");
-    }
-
-    let ping_result = reciever.expect("ping result should exists");
-
-    return ping_formatter(ping_result);
+    // Take care of input
+    handle_ping_input(addr)
+        .map_err(BotPingError::from)
+        // make ping happen
+        .map(|input| pinger::ping(input, None).map_err(BotPingError::from))
+        .map_err(BotPingError::from)
+        .and_then(|flaten| flaten)
+        // extract reciever
+        .map(|response| response.recv().map_err(BotPingError::from))
+        .and_then(|flaten| flaten)
+        // formatting ping
+        .map(|result| ping_formatter(result))
+        // here we have Result<String, BotPingError> so `unwrap()` is safe.
+        .unwrap()
 }
