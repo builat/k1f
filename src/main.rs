@@ -8,5 +8,5 @@ async fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
     log::info!("Starting command bot...");
     let bot = Bot::from_env();
-    commands::dict::init_bot(bot).await;
+    commands::bot_init::init_bot(bot).await;
 }
