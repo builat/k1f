@@ -49,12 +49,19 @@ async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
 }
 
 pub async fn init_bot(bot: Bot) {
-    let handler = dptree::entry()
-        .branch(
-            Update::filter_message()
-                .filter_command::<Command>()
-                .endpoint(cmd_answer),
-        )
-        .branch(Update::filter_message().endpoint(raw_messages));
-    Dispatcher::builder(bot, handler).build().dispatch().await;
+    // Handling of command messages
+    let cmd_brach = Update::filter_message()
+        .filter_command::<Command>()
+        .endpoint(cmd_answer);
+
+    // Handling of raw messages
+    let raw_branch = Update::filter_message().endpoint(raw_messages);
+
+    let handler = dptree::entry().branch(cmd_brach).branch(raw_branch);
+
+    Dispatcher::builder(bot, handler)
+        .enable_ctrlc_handler()
+        .build()
+        .dispatch()
+        .await;
 }
