@@ -10,6 +10,7 @@ Also it's a project to improve my personal rust skills.
 1. Create token in tg bot: https://t.me/BotFather 
 2. ```bash
     $ export TELOXIDE_TOKEN=*YOUR-TOKEN*
+    $ export MASTER_TG_ID=*your personal tg id*
     $ cargo run
    ```
 3. For "production"  
@@ -21,6 +22,7 @@ Also it's a project to improve my personal rust skills.
 4. In case you want to keep it running
    ```bash
    $ export TELOXIDE_TOKEN=*YOUR-TOKEN*
+   $ export MASTER_TG_ID=*your personal tg id*
    $ cargo build --release
    $ ./target/release/k1f-bot&
    $ ps -aux | grep k1f
