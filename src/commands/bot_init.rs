@@ -1,3 +1,5 @@
+use std::env;
+
 use teloxide::{prelude::*, utils::command::BotCommands};
 
 use crate::commands::{help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd};
@@ -34,13 +36,19 @@ async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
 
 async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
     let chat_request: ChatRequest = ChatRequest { bot, msg };
+
     chat_request
         .bot
         .send_message(
-            chat_request.msg.chat.id,
+            ChatId(
+                env::var("MASTER_TG_ID")
+                    .expect("To 'MASTER_TG_ID' to be set")
+                    .parse::<i64>()
+                    .expect("MASTER_TG_ID to be i64"),
+            ),
             format!(
-                "Unimplemented. Echo: {:?}",
-                &chat_request.msg.text().unwrap_or("")
+                "From internet dweller: {:?}",
+                &chat_request.msg.text().unwrap_or("Unsupported media type")
             ),
         )
         .await?;
