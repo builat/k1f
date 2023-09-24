@@ -607,6 +607,7 @@ dependencies = [
  "anyhow",
  "futures",
  "lazy-regex",
+ "lazy_static",
  "log",
  "pinger",
  "pretty_env_logger",

@@ -1,6 +1,6 @@
 use std::env;
 
-use teloxide::{prelude::*, utils::command::BotCommands};
+use teloxide::{prelude::*, types::InputFile, utils::command::BotCommands};
 
 use crate::commands::{help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd};
 
@@ -21,6 +21,15 @@ pub struct ChatRequest {
     pub bot: Bot,
     pub msg: Message,
 }
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref MASTER_TG_ID: i64 = env::var("MASTER_TG_ID".to_string())
+        .expect("To 'MASTER_TG_ID' to be set")
+        .parse::<i64>()
+        .expect("MASTER_TG_ID to be i64");
+    static ref FROM_PLACEHOLDER: String = "From internet dweller:".to_string();
+}
 
 async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
     let chat_request: ChatRequest = ChatRequest { bot, msg };
@@ -37,21 +46,49 @@ async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
 async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
     let chat_request: ChatRequest = ChatRequest { bot, msg };
 
-    chat_request
-        .bot
-        .send_message(
-            ChatId(
-                env::var("MASTER_TG_ID")
-                    .expect("To 'MASTER_TG_ID' to be set")
-                    .parse::<i64>()
-                    .expect("MASTER_TG_ID to be i64"),
-            ),
-            format!(
-                "From internet dweller: {:?}",
-                &chat_request.msg.text().unwrap_or("Unsupported media type")
-            ),
-        )
-        .await?;
+    match &chat_request {
+        txt_msg if txt_msg.msg.text().is_some() => {
+            let _ = &chat_request
+                .bot
+                .send_message(
+                    ChatId(*MASTER_TG_ID),
+                    format!(
+                        "{:?}: {:?}",
+                        *FROM_PLACEHOLDER,
+                        &chat_request.msg.text().unwrap_or("Unsupported media type")
+                    ),
+                )
+                .await?;
+
+            let _ = &chat_request
+            .bot
+            .send_message(
+                chat_request.msg.from().unwrap().id,
+                "Message sent. Thanks, unknown internet dweller.",
+            )
+            .await?;
+        }
+
+        img_msg if img_msg.msg.photo().is_some() => {
+            let largest_photo = img_msg.msg.photo().unwrap();
+            let file_id = &largest_photo.last().unwrap().file.id;
+            let photo = InputFile::file_id(file_id);
+
+            let _ = &chat_request
+                .bot
+                .send_photo(ChatId(*MASTER_TG_ID), photo)
+                .await?;
+
+            let _ = &chat_request
+                .bot
+                .send_message(
+                    chat_request.msg.from().unwrap().id,
+                    "Photo sent. Thanks, unknown internet dweller.",
+                )
+                .await?;
+        }
+        _ => {}
+    };
 
     Ok(())
 }
