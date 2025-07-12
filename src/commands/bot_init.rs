@@ -4,7 +4,9 @@ use teloxide::{
     dispatching::dialogue::GetChatId, prelude::*, types::InputFile, utils::command::BotCommands,
 };
 
-use crate::commands::{help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd};
+use crate::commands::{
+    chat_gpt::AskGpt, help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd,
+};
 
 #[derive(BotCommands, Clone, Debug)]
 #[command(
@@ -17,7 +19,7 @@ pub enum Command {
     GuS,
     GuN(u8),
     PING(String),
-    //GPT(String),
+    GPT(String),
 }
 
 pub struct ChatRequest {
@@ -42,7 +44,11 @@ async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
         Command::PING(target) => PingCmd::new(&chat_request, &target).respond().await?,
         Command::GuS => UuidCmd::new(&chat_request, None).respond().await?,
         Command::GuN(qty) => UuidCmd::new(&chat_request, Some(qty)).respond().await?,
-        //Command::GPT(question) =>
+        Command::GPT(question) => {
+            AskGpt::new(&chat_request, &Some(question))
+                .respond()
+                .await?
+        }
     };
     Ok(())
 }
@@ -66,7 +72,7 @@ async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
             let _ = &chat_request
                 .bot
                 .send_message(
-                    chat_request.msg.chat_id().unwrap(),
+                    ChatId::from(chat_request.msg.chat_id().unwrap()),
                     "Message sent. Thanks, unknown internet dweller.",
                 )
                 .await?;
