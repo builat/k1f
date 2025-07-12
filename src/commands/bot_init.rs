@@ -1,6 +1,8 @@
 use std::env;
 
-use teloxide::{prelude::*, types::InputFile, utils::command::BotCommands};
+use teloxide::{
+    dispatching::dialogue::GetChatId, prelude::*, types::InputFile, utils::command::BotCommands,
+};
 
 use crate::commands::{help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd};
 
@@ -15,6 +17,7 @@ pub enum Command {
     GuS,
     GuN(u8),
     PING(String),
+    //GPT(String),
 }
 
 pub struct ChatRequest {
@@ -39,6 +42,7 @@ async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> 
         Command::PING(target) => PingCmd::new(&chat_request, &target).respond().await?,
         Command::GuS => UuidCmd::new(&chat_request, None).respond().await?,
         Command::GuN(qty) => UuidCmd::new(&chat_request, Some(qty)).respond().await?,
+        //Command::GPT(question) =>
     };
     Ok(())
 }
@@ -61,18 +65,18 @@ async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
                 .await?;
 
             let _ = &chat_request
-            .bot
-            .send_message(
-                chat_request.msg.from().unwrap().id,
-                "Message sent. Thanks, unknown internet dweller.",
-            )
-            .await?;
+                .bot
+                .send_message(
+                    chat_request.msg.chat_id().unwrap(),
+                    "Message sent. Thanks, unknown internet dweller.",
+                )
+                .await?;
         }
 
         img_msg if img_msg.msg.photo().is_some() => {
             let largest_photo = img_msg.msg.photo().unwrap();
             let file_id = &largest_photo.last().unwrap().file.id;
-            let photo = InputFile::file_id(file_id);
+            let photo = InputFile::file_id(file_id.clone());
 
             let _ = &chat_request
                 .bot
@@ -82,7 +86,7 @@ async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
             let _ = &chat_request
                 .bot
                 .send_message(
-                    chat_request.msg.from().unwrap().id,
+                    chat_request.msg.chat_id().unwrap(),
                     "Photo sent. Thanks, unknown internet dweller.",
                 )
                 .await?;

@@ -3,12 +3,12 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum BotPingError {
-    PingErrors(pinger::PingError),
+    PingErrors(pinger::PingCreationError),
     AnyHowErrors(anyhow::Error),
     RecvErr(std::sync::mpsc::RecvError),
     SimpleTextException(String),
     BadUrl,
-    NotAHost
+    NotAHost,
 }
 
 impl fmt::Display for BotPingError {
@@ -40,8 +40,8 @@ impl From<String> for BotPingError {
     }
 }
 
-impl From<pinger::PingError> for BotPingError {
-    fn from(err: pinger::PingError) -> BotPingError {
+impl From<pinger::PingCreationError> for BotPingError {
+    fn from(err: pinger::PingCreationError) -> BotPingError {
         BotPingError::PingErrors(err)
     }
 }

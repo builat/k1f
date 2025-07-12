@@ -6,14 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-teloxide = { version = "0.12", features = ["macros"] }
-log = "0.4.19"
-pinger = "0.13.0"
-url = "2.4.0"
-futures = "0.3.28"
-lazy_static = "1.4.0"
-lazy-regex = "3.0.1"
-anyhow = "1.0.72"
-uuid = "1.4.1"
+teloxide = { version = "0.17.0", features = ["macros"] }
+log = "0.4.27"
+pinger = "2.0.0"
+url = "2.5.4"
+futures = "0.3.31"
+lazy_static = "1.5.0"
+lazy-regex = "3.4.1"
+anyhow = "1.0.98"
+uuid = "1.17.0"
 pretty_env_logger = "0.5.0"
-tokio = { version ="1.29.1", features = ["rt-multi-thread", "macros"] }
+tokio = { version ="1.46.1", features = ["rt-multi-thread", "macros"] }

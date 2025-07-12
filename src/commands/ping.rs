@@ -1,10 +1,10 @@
 use crate::commands::bot_init::ChatRequest;
 use crate::commands::errors::BotPingError;
 use lazy_regex::regex;
-use pinger::PingResult;
-use std::net::Ipv4Addr;
+use pinger::{PingOptions, PingResult};
+use std::{net::Ipv4Addr, time::Duration};
 use teloxide::prelude::*;
-use url::Url;
+use url::{form_urlencoded::Target, Url};
 
 static IP_RE: &lazy_regex::Lazy<lazy_regex::Regex> =
     regex!(r"^\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}$");
@@ -69,7 +69,10 @@ impl PingCmd<'_, '_> {
         self.handle_ping_input(&self.host)
             .map_err(BotPingError::from)
             // make ping happen
-            .map(|input| pinger::ping(input, None).map_err(BotPingError::from))
+            .map(|target| {
+                let options = PingOptions::new(target, Duration::from_secs(1), None);
+                pinger::ping(options).map_err(BotPingError::from)
+            })
             .map_err(BotPingError::from)
             .and_then(|flaten| flaten)
             // extract reciever
