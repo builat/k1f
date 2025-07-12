@@ -57,8 +57,7 @@ async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
                 .send_message(
                     ChatId(*MASTER_TG_ID),
                     format!(
-                        "{:?}: {:?}",
-                        *FROM_PLACEHOLDER,
+                        "{:?}",
                         &chat_request.msg.text().unwrap_or("Unsupported media type")
                     ),
                 )
