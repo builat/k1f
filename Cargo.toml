@@ -7,9 +7,11 @@ edition = "2021"
 
 [dependencies]
 teloxide = { version = "0.17.0", features = ["macros"] }
+reqwest = { version = "0.12.22", features = ["json"] }
 log = "0.4.27"
 pinger = "2.0.0"
 url = "2.5.4"
+serde = "1.0.219"
 futures = "0.3.31"
 lazy_static = "1.5.0"
 lazy-regex = "3.4.1"

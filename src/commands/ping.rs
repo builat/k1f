@@ -4,7 +4,7 @@ use lazy_regex::regex;
 use pinger::{PingOptions, PingResult};
 use std::{net::Ipv4Addr, time::Duration};
 use teloxide::prelude::*;
-use url::{form_urlencoded::Target, Url};
+use url::Url;
 
 static IP_RE: &lazy_regex::Lazy<lazy_regex::Regex> =
     regex!(r"^\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}$");
