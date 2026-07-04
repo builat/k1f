@@ -1,7 +1,10 @@
-use crate::commands::bot_init::ChatRequest;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode::MarkdownV2;
 use uuid::Uuid;
+
+use crate::commands::bot_init::ChatRequest;
+
+const MAX_UUIDS: u8 = 50;
 
 pub struct UuidCmd<'cr> {
     pub chat_request: &'cr ChatRequest,
@@ -9,7 +12,7 @@ pub struct UuidCmd<'cr> {
 }
 
 impl UuidCmd<'_> {
-    pub fn new(chat_request: &ChatRequest, qty: Option<u8>) -> UuidCmd {
+    pub fn new(chat_request: &ChatRequest, qty: Option<u8>) -> UuidCmd<'_> {
         UuidCmd {
             chat_request,
             qty: qty.unwrap_or(1),
@@ -17,21 +20,11 @@ impl UuidCmd<'_> {
     }
 
     fn gen_uuid(&self, qty: u8) -> String {
-        let uuid_limit = match qty {
-            0 => 1,
-            x if x > 50 => 50,
-            x => x
-        };
+        // Treat 0 as "one"; cap at MAX_UUIDS so the message stays readable.
+        let count = qty.clamp(1, MAX_UUIDS) as usize;
 
-        let mut uuids: Vec<(u8, Uuid)> = vec![];
-
-        for idx in 0..uuid_limit {
-            uuids.push((idx + 1, Uuid::new_v4()));
-        }
-
-        uuids
-            .iter()
-            .map(|(idx, u)| format!("{}\\.  `{}`", idx, u))
+        (0..count)
+            .map(|idx| format!("{}\\.  `{}`", idx + 1, Uuid::new_v4()))
             .collect::<Vec<_>>()
             .join("\n")
     }

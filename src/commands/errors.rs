@@ -1,59 +1,17 @@
-use std::error::Error;
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+/// Errors raised while preparing or running a ping.
+#[derive(Debug, Error)]
 pub enum BotPingError {
-    PingErrors(pinger::PingCreationError),
-    AnyHowErrors(anyhow::Error),
-    RecvErr(std::sync::mpsc::RecvError),
-    SimpleTextException(String),
+    #[error("Could not start ping: {0}")]
+    Ping(#[from] pinger::PingCreationError),
+
+    #[error("Ping receiver closed: {0}")]
+    Recv(#[from] std::sync::mpsc::RecvError),
+
+    #[error("Malformed URL")]
     BadUrl,
+
+    #[error("Not a valid host")]
     NotAHost,
-}
-
-impl fmt::Display for BotPingError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            BotPingError::SimpleTextException(ref err) => {
-                write!(f, "{}", err)
-            }
-            BotPingError::PingErrors(ref err) => {
-                write!(f, "{}", err)
-            }
-            BotPingError::AnyHowErrors(ref err) => {
-                write!(f, "{}", err)
-            }
-            BotPingError::RecvErr(ref err) => {
-                write!(f, "{}", err)
-            }
-            BotPingError::BadUrl => write!(f, "Bad URL"),
-            BotPingError::NotAHost => write!(f, "Not a host"),
-        }
-    }
-}
-
-impl Error for BotPingError {}
-
-impl From<String> for BotPingError {
-    fn from(err: String) -> BotPingError {
-        BotPingError::SimpleTextException(err)
-    }
-}
-
-impl From<pinger::PingCreationError> for BotPingError {
-    fn from(err: pinger::PingCreationError) -> BotPingError {
-        BotPingError::PingErrors(err)
-    }
-}
-
-impl From<anyhow::Error> for BotPingError {
-    fn from(err: anyhow::Error) -> BotPingError {
-        BotPingError::AnyHowErrors(err)
-    }
-}
-
-impl From<std::sync::mpsc::RecvError> for BotPingError {
-    fn from(err: std::sync::mpsc::RecvError) -> BotPingError {
-        BotPingError::RecvErr(err)
-    }
 }

@@ -1,10 +1,12 @@
-use crate::commands::bot_init::ChatRequest;
-use crate::commands::errors::BotPingError;
+use std::{net::Ipv4Addr, time::Duration};
+
 use lazy_regex::regex;
 use pinger::{PingOptions, PingResult};
-use std::{net::Ipv4Addr, time::Duration};
 use teloxide::prelude::*;
 use url::Url;
+
+use crate::commands::bot_init::ChatRequest;
+use crate::commands::errors::BotPingError;
 
 static IP_RE: &lazy_regex::Lazy<lazy_regex::Regex> =
     regex!(r"^\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}$");
@@ -20,67 +22,56 @@ impl PingCmd<'_, '_> {
     }
 
     pub async fn respond(&self) -> Result<Message, teloxide::RequestError> {
+        let text = match self.ping() {
+            Ok(report) => report,
+            Err(err) => err.to_string(),
+        };
         self.chat_request
             .bot
-            .send_message(self.chat_request.msg.chat.id, self.ping())
+            .send_message(self.chat_request.msg.chat.id, text)
             .await
     }
 
     fn ping_formatter(&self, ping_result: PingResult) -> String {
         match ping_result {
             PingResult::Pong(duration, line) => format!("[ {:?} ] => {}", duration, line),
-            PingResult::Timeout(_) => format!("Timeout!"),
+            PingResult::Timeout(_) => "Timeout!".to_string(),
             PingResult::Unknown(line) => format!("Unknown line: {}", line),
-            PingResult::PingExited(_code, _stderr) => format!("code: {} err: {}", _code, _stderr),
+            PingResult::PingExited(code, stderr) => format!("code: {} err: {}", code, stderr),
         }
     }
 
     fn extract_host_from_url(user_input: &str) -> Result<String, BotPingError> {
-        fn match_input_result_option(parsed: Url) -> String {
-            match parsed.host_str() {
-                Some(result) => result,
-                None => "No target host found",
-            }
-            .to_string()
-        }
-
-        Url::parse(&user_input)
-            .map(match_input_result_option)
-            .map_err(|_| BotPingError::BadUrl)
+        let parsed = Url::parse(user_input).map_err(|_| BotPingError::BadUrl)?;
+        Ok(parsed
+            .host_str()
+            .unwrap_or("No target host found")
+            .to_string())
     }
 
     fn extract_host_from_ip(user_input: &str) -> Result<String, BotPingError> {
-        match String::from(user_input).parse::<Ipv4Addr>() {
-            Ok(_) => Ok(String::from(user_input)),
-            Err(_) => Err(BotPingError::NotAHost),
+        user_input
+            .parse::<Ipv4Addr>()
+            .map(|_| user_input.to_string())
+            .map_err(|_| BotPingError::NotAHost)
+    }
+
+    fn normalize_host(&self, user_input: &str) -> Result<String, BotPingError> {
+        let host = user_input.trim();
+        if host.contains("://") {
+            Self::extract_host_from_url(host)
+        } else if IP_RE.is_match(host) {
+            Self::extract_host_from_ip(host)
+        } else {
+            Ok(host.to_string())
         }
     }
 
-    fn handle_ping_input(&self, user_input: &str) -> Result<String, BotPingError> {
-        match String::from(user_input.trim()) {
-            host if host.contains("://") => Self::extract_host_from_url(self.host),
-            host if IP_RE.is_match(&host) => Self::extract_host_from_ip(&self.host),
-            host => Ok(host),
-        }
-    }
-
-    fn ping(&self) -> String {
-        // Take care of input
-        self.handle_ping_input(&self.host)
-            .map_err(BotPingError::from)
-            // make ping happen
-            .map(|target| {
-                let options = PingOptions::new(target, Duration::from_secs(1), None);
-                pinger::ping(options).map_err(BotPingError::from)
-            })
-            .map_err(BotPingError::from)
-            .and_then(|flaten| flaten)
-            // extract reciever
-            .map(|response| response.recv().map_err(BotPingError::from))
-            .and_then(|flaten| flaten)
-            // formatting ping
-            .map(|result| self.ping_formatter(result))
-            // here we have Result<String, BotPingError> so `unwrap()` is safe.
-            .unwrap()
+    fn ping(&self) -> Result<String, BotPingError> {
+        let target = self.normalize_host(self.host)?;
+        let options = PingOptions::new(target, Duration::from_secs(1), None);
+        let receiver = pinger::ping(options)?;
+        let result = receiver.recv()?;
+        Ok(self.ping_formatter(result))
     }
 }
