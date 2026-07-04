@@ -111,7 +111,8 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
 /// Escape characters with special meaning in Telegram's MarkdownV2.
 fn escape_markdown_v2(text: &str) -> String {
     const SPECIAL: &[char] = &[
-        '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!',
+        '\\', '*', '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.',
+        '!',
     ];
     let mut escaped = String::with_capacity(text.len());
     for c in text.chars() {
