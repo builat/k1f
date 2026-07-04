@@ -31,12 +31,28 @@ struct ChoiceMessage {
     content: String,
 }
 
+/// Shape of an OpenAI error body, e.g. on a 404 for an unknown model:
+/// `{"error": {"message": "...", "type": "...", "code": "..."}}`.
+#[derive(Deserialize)]
+struct OpenAiError {
+    error: OpenAiErrorBody,
+}
+
+#[derive(Deserialize)]
+struct OpenAiErrorBody {
+    message: String,
+}
+
 const SYSTEM_PROMPT: &str = "\
 1. Act like a slightly ironic expert.
 2. Skip the pleasantries—stick strictly to facts.
 3. Flag any points you’re unsure about separately.
 4. If the data are insufficient, say so.
 5. Assume the questioner might be incompetent.";
+
+/// Model used when GPT_MODEL is not set. Kept current with OpenAI's lineup;
+/// gpt-4.1 was retired on 2026-02-13.
+const DEFAULT_MODEL: &str = "gpt-5.5";
 
 pub struct AskGpt<'cr, 'pr> {
     pub chat_request: &'cr ChatRequest,
@@ -71,9 +87,15 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
     }
 
     async fn ask_openai(&self, prompt: &str) -> Result<String, anyhow::Error> {
+        let api_key = std::env::var("GPT_TOKEN")
+            .expect("GPT_TOKEN must be set in the environment")
+            .trim()
+            .to_string();
+        let model = std::env::var("GPT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+
         let client = Client::new();
         let request = OpenAiRequest {
-            model: "gpt-4.1".to_string(),
+            model: model.clone(),
             messages: vec![
                 GptMessage {
                     role: "user".to_string(),
@@ -85,21 +107,30 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
                 },
             ],
         };
-        let api_key = std::env::var("GPT_TOKEN")
-            .expect("GPT_TOKEN must be set in the environment")
-            .trim()
-            .to_string();
 
         let response = client
             .post("https://api.openai.com/v1/chat/completions")
             .bearer_auth(api_key)
             .json(&request)
             .send()
-            .await?
-            .json::<OpenAiResponse>()
             .await?;
 
-        Ok(response
+        // reqwest does not turn 4xx/5xx into Err by default, so a 404 for a
+        // retired model would otherwise surface as a misleading "error
+        // decoding response body". Check the status and surface OpenAI's own
+        // error message instead.
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let detail = serde_json::from_str::<OpenAiError>(&body)
+                .map(|e| e.error.message)
+                .unwrap_or_else(|_| body.trim().to_string());
+            anyhow::bail!("OpenAI {status}: {detail}");
+        }
+
+        let parsed = response.json::<OpenAiResponse>().await?;
+
+        Ok(parsed
             .choices
             .into_iter()
             .next()
