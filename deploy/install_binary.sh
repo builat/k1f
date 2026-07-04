@@ -37,10 +37,12 @@ fill_env_file_interactive() {
     read -rp "TELOXIDE_TOKEN (from @BotFather): " tok </dev/tty
     read -rp "MASTER_TG_ID (your numeric Telegram id): " uid </dev/tty
     read -rsp "GPT_TOKEN (OpenAI key, hidden): " gpt </dev/tty; printf '\n'
+    read -rp "GPT_MODEL (Enter for default gpt-5.5): " model </dev/tty
 
-    [[ -n "${tok}" ]] && sed -i "s|^TELOXIDE_TOKEN=.*|TELOXIDE_TOKEN=${tok}|" "${file}"
-    [[ -n "${uid}" ]] && sed -i "s|^MASTER_TG_ID=.*|MASTER_TG_ID=${uid}|"     "${file}"
-    [[ -n "${gpt}" ]] && sed -i "s|^GPT_TOKEN=.*|GPT_TOKEN=${gpt}|"           "${file}"
+    [[ -n "${tok}" ]]   && sed -i "s|^TELOXIDE_TOKEN=.*|TELOXIDE_TOKEN=${tok}|" "${file}"
+    [[ -n "${uid}" ]]   && sed -i "s|^MASTER_TG_ID=.*|MASTER_TG_ID=${uid}|"     "${file}"
+    [[ -n "${gpt}" ]]   && sed -i "s|^GPT_TOKEN=.*|GPT_TOKEN=${gpt}|"           "${file}"
+    [[ -n "${model}" ]] && sed -i "s|^GPT_MODEL=.*|GPT_MODEL=${model}|"         "${file}"
 }
 
 # --- sanity checks ----------------------------------------------------------
