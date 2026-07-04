@@ -1,0 +1,66 @@
+# k1f-tg — Telegram "swiss-knife" bot.
+#
+# Install:
+#   sudo install -m 644 deploy/k1f-tg.service /etc/systemd/system/k1f-tg.service
+#   sudo install -m 600 /path/to/k1f-tg.env /etc/k1f-tg.env   # see k1f-tg.env.example
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now k1f-tg
+#
+# Note: the bot spawns /bin/ping for the /ping command. /bin/ping usually gets
+# its privileges via file capabilities, so NoNewPrivileges= is deliberately left
+# at the default (false) — setting it would break /ping.
+
+[Unit]
+Description=k1f-tg Telegram bot
+Documentation=https://github.com/builat/k1f
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# --- User / paths -----------------------------------------------------------
+User=k1f
+Group=k1f
+WorkingDirectory=/var/lib/k1f
+
+EnvironmentFile=/etc/k1f-tg.env
+
+# Default log level; can be overridden in the env file.
+Environment=RUST_LOG=info
+
+ExecStart=/usr/local/bin/k1f-tg
+
+Restart=on-failure
+RestartSec=5s
+
+# Send both stdout and stderr to the journal, tagged for `journalctl -u k1f-tg`.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k1f-tg
+
+# --- Hardening --------------------------------------------------------------
+# Most restrictions are safe, but keep them compatible with spawning /bin/ping:
+# do NOT set NoNewPrivileges=true (breaks ping capabilities) and do NOT use a
+# restrictive RestrictAddressFamilies (ping spawns a child that needs sockets).
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/k1f
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictNamespaces=true
+
+# Outbound-only network access for a bot.
+IPAddressDeny=link-local multicast
+RestrictRealtime=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
