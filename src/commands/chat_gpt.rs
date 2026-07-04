@@ -1,3 +1,4 @@
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::{prelude::*, types::ParseMode};
@@ -80,9 +81,9 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
             .bot
             .send_message(
                 self.chat_request.msg.chat.id,
-                format_for_markdown_v2(&answer),
+                markdown_to_telegram_html(&answer),
             )
-            .parse_mode(ParseMode::MarkdownV2)
+            .parse_mode(ParseMode::Html)
             .await
     }
 
@@ -139,44 +140,223 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
     }
 }
 
-/// Escape characters with special meaning in Telegram's MarkdownV2.
-fn escape_markdown_v2(text: &str) -> String {
-    const SPECIAL: &[char] = &[
-        '\\', '*', '_', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.',
-        '!',
-    ];
-    let mut escaped = String::with_capacity(text.len());
-    for c in text.chars() {
-        if SPECIAL.contains(&c) {
-            escaped.push('\\');
+/// Convert GitHub-Flavored Markdown (as returned by ChatGPT) into the subset
+/// of HTML understood by Telegram.
+///
+/// Telegram is not a Markdown renderer, so unsupported constructs are degraded
+/// rather than rendered literally:
+/// - headings  -> bold text (Telegram has no heading style);
+/// - tables    -> a `<pre>` block (monospace, alignment preserved as text);
+/// - `---`     -> an em-dash line;
+/// - raw HTML  (`<details>`, etc.) and footnotes are dropped for safety.
+fn markdown_to_telegram_html(md: &str) -> String {
+    // GFM-flavoured parsing: tables, strikethrough, task lists, smart quotes.
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_SMART_PUNCTUATION);
+
+    let mut out = String::with_capacity(md.len());
+    let mut in_pre = false; // inside <pre> we don't HTML-escape again
+    let mut list_stack: Vec<Option<u64>> = Vec::new(); // None = bullet, Some(n) = ordered
+
+    for event in Parser::new_ext(md, options) {
+        match event {
+            Event::Start(tag) => match tag {
+                Tag::Paragraph => {}
+                Tag::Heading { .. } => out.push_str("<b>"),
+                Tag::BlockQuote(_) => out.push_str("<blockquote>"),
+                Tag::CodeBlock(_) => {
+                    out.push_str("<pre><code>");
+                    in_pre = true;
+                }
+                Tag::HtmlBlock => {} // drop raw HTML blocks (e.g. <details>)
+                Tag::List(start) => list_stack.push(start),
+                Tag::Item => match list_stack.last_mut() {
+                    Some(Some(n)) => {
+                        out.push_str(&format!("{n}. "));
+                        *n += 1;
+                    }
+                    _ => out.push_str("• "),
+                },
+                Tag::Emphasis => out.push_str("<i>"),
+                Tag::Strong => out.push_str("<b>"),
+                Tag::Strikethrough => out.push_str("<s>"),
+                Tag::Link { dest_url, .. } => {
+                    out.push_str(&format!("<a href=\"{}\">", html_escape(&dest_url, false)));
+                }
+                Tag::Table(_) => {
+                    out.push_str("<pre>");
+                    in_pre = true;
+                }
+                _ => {}
+            },
+            Event::End(end) => match end {
+                TagEnd::Paragraph => out.push('\n'),
+                TagEnd::Heading(_) => {
+                    out.push_str("</b>\n");
+                }
+                TagEnd::BlockQuote(_) => out.push_str("</blockquote>\n"),
+                TagEnd::CodeBlock => {
+                    out.push_str("</code></pre>\n");
+                    in_pre = false;
+                }
+                TagEnd::HtmlBlock => {}
+                TagEnd::List(_) => {
+                    list_stack.pop();
+                }
+                TagEnd::Item => out.push('\n'),
+                TagEnd::Emphasis => out.push_str("</i>"),
+                TagEnd::Strong => out.push_str("</b>"),
+                TagEnd::Strikethrough => out.push_str("</s>"),
+                TagEnd::Link => out.push_str("</a>"),
+                TagEnd::Table => {
+                    out.push_str("</pre>\n");
+                    in_pre = false;
+                }
+                _ => {}
+            },
+            Event::Text(text) => out.push_str(&html_escape(&text, in_pre)),
+            Event::Code(code) => {
+                out.push_str("<code>");
+                out.push_str(&html_escape(&code, false));
+                out.push_str("</code>");
+            }
+            Event::SoftBreak | Event::HardBreak => out.push('\n'),
+            Event::Rule => out.push_str("—\n"),
+            Event::TaskListMarker(checked) => {
+                // A task-list item also opened a normal `Tag::Item`, which
+                // already emitted a "• " bullet. Drop it so the checkbox glyph
+                // is the marker, not "• ☑".
+                if let Some(stripped) = out.strip_suffix("• ") {
+                    out.truncate(stripped.len());
+                }
+                out.push_str(if checked { "☑ " } else { "☐ " });
+            }
+            // Drop raw/inline HTML, footnotes, math — not safely representable.
+            Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_) => {}
         }
-        escaped.push(c);
+    }
+
+    out.trim_end().to_string()
+}
+
+/// Escape text for inclusion in a Telegram HTML message. Inside `<pre>` we
+/// still escape `<`, `>`, `&` (so the block can't be broken out of), but not
+/// quotes — they only matter inside attribute values.
+fn html_escape(s: &str, in_pre: bool) -> String {
+    let mut escaped = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' if !in_pre => escaped.push_str("&quot;"),
+            _ => escaped.push(c),
+        }
     }
     escaped
 }
 
-/// Render a ChatGPT reply so that triple-fenced code blocks are passed through
-/// verbatim and the surrounding prose is escaped for MarkdownV2.
-fn format_for_markdown_v2(chatgpt_response: &str) -> String {
-    let mut result = String::new();
-    let mut in_code_block = false;
+#[cfg(test)]
+mod tests {
+    use super::markdown_to_telegram_html;
 
-    for line in chatgpt_response.lines() {
-        if line.trim_start().starts_with("```") {
-            result.push_str("```\n");
-            in_code_block = !in_code_block;
-        } else if in_code_block {
-            result.push_str(line);
-            result.push('\n');
-        } else {
-            result.push_str(&escape_markdown_v2(line));
-            result.push('\n');
-        }
+    fn convert(md: &str) -> String {
+        markdown_to_telegram_html(md)
     }
 
-    if in_code_block {
-        result.push_str("```\n");
+    #[test]
+    fn bold_and_italic() {
+        let out = convert("**bold** and *italic*");
+        assert_eq!(out, "<b>bold</b> and <i>italic</i>");
     }
 
-    result
+    #[test]
+    fn inline_code() {
+        let out = convert("status: `OK`");
+        assert_eq!(out, "status: <code>OK</code>");
+    }
+
+    #[test]
+    fn fenced_code_block_becomes_pre() {
+        let md = "```\n{\"status\": \"OK\"}\n```";
+        let out = convert(md);
+        assert_eq!(out, "<pre><code>{\"status\": \"OK\"}\n</code></pre>");
+    }
+
+    #[test]
+    fn heading_becomes_bold() {
+        let out = convert("# Report Title");
+        assert_eq!(out, "<b>Report Title</b>");
+    }
+
+    #[test]
+    fn blockquote() {
+        let out = convert("> a quoted line");
+        // Inner paragraph adds a trailing newline before </blockquote>.
+        assert_eq!(out, "<blockquote>a quoted line\n</blockquote>");
+    }
+
+    #[test]
+    fn unordered_list() {
+        let out = convert("- one\n- two\n- three");
+        assert_eq!(out, "• one\n• two\n• three");
+    }
+
+    #[test]
+    fn ordered_list_increments() {
+        let out = convert("1. first\n2. second\n3. third");
+        assert_eq!(out, "1. first\n2. second\n3. third");
+    }
+
+    #[test]
+    fn link_becomes_anchor() {
+        let out = convert("[docs](https://example.com/x?a=1&b=2)");
+        assert_eq!(
+            out,
+            "<a href=\"https://example.com/x?a=1&amp;b=2\">docs</a>"
+        );
+    }
+
+    #[test]
+    fn table_becomes_pre() {
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+        let out = convert(md);
+        // pulldown-cmark renders table text; we wrap the whole thing in <pre>.
+        assert!(out.starts_with("<pre>"), "got: {out}");
+        assert!(out.ends_with("</pre>"), "got: {out}");
+        assert!(out.contains("A") && out.contains("B"));
+    }
+
+    #[test]
+    fn html_chars_in_text_are_escaped() {
+        let out = convert("a < b > c & d");
+        assert_eq!(out, "a &lt; b &gt; c &amp; d");
+    }
+
+    #[test]
+    fn horizontal_rule_degrades_to_dash() {
+        let out = convert("---");
+        assert_eq!(out, "—");
+    }
+
+    #[test]
+    fn tasklist_markers_become_glyphs() {
+        let out = convert("- [x] done\n- [ ] todo");
+        assert_eq!(out, "☑ done\n☐ todo");
+    }
+
+    #[test]
+    fn details_html_block_is_dropped() {
+        let md = "<details>\n<summary>x</summary>\nbody\n</details>";
+        let out = convert(md);
+        // Must not leak any raw tags into Telegram's HTML parser.
+        assert!(!out.contains('<') || out.starts_with("<"));
+    }
 }
