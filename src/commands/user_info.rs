@@ -1,12 +1,13 @@
-use crate::commands::bot_init::ChatRequest;
 use teloxide::prelude::*;
+
+use crate::commands::bot_init::ChatRequest;
 
 pub struct UserInfo<'cr> {
     pub chat_request: &'cr ChatRequest,
 }
 
 impl UserInfo<'_> {
-    pub fn new(chat_request: &ChatRequest) -> UserInfo {
+    pub fn new(chat_request: &ChatRequest) -> UserInfo<'_> {
         UserInfo { chat_request }
     }
 
@@ -22,7 +23,7 @@ impl UserInfo<'_> {
         format!(
             "UserId: {}\nUserName: {}\ndate: {}",
             msg.chat.id,
-            String::from(msg.chat.first_name().unwrap_or("n/a")),
+            msg.chat.first_name().unwrap_or("n/a"),
             msg.date
         )
     }

@@ -1,12 +1,14 @@
-use crate::commands::bot_init::ChatRequest;
 use teloxide::prelude::*;
 
-const HELP_MSG: &str = "
+use crate::commands::bot_init::ChatRequest;
+
+const HELP_MSG: &str = "\
 /help — display this text.
 /username — echo client id.
-/gun 1-9 — Generate uuid v4. Max - 9
-/gus — Generate single uuid v4.
-/ping — PING (8.8.8.8 | https://google.com | google.com)
+/gun N — generate up to 50 uuid v4 (one per line).
+/gus — generate a single uuid v4.
+/ping target — PING (8.8.8.8 | https://google.com | google.com)
+/gpt question — ask ChatGPT
 ";
 
 pub struct HelpCmd<'cr> {
@@ -14,7 +16,7 @@ pub struct HelpCmd<'cr> {
 }
 
 impl HelpCmd<'_> {
-    pub fn new(chat_request: &ChatRequest) -> HelpCmd {
+    pub fn new(chat_request: &ChatRequest) -> HelpCmd<'_> {
         HelpCmd { chat_request }
     }
 
