@@ -40,9 +40,10 @@ StandardError=journal
 SyslogIdentifier=k1f-tg
 
 # --- Hardening --------------------------------------------------------------
-# Most restrictions are safe, but keep them compatible with spawning /bin/ping:
-# do NOT set NoNewPrivileges=true (breaks ping capabilities) and do NOT use a
-# restrictive RestrictAddressFamilies (ping spawns a child that needs sockets).
+# Most restrictions are safe. The /ping command works because /bin/ping gets
+# CAP_NET_RAW from the bounding set + AmbientCapabilities below: when the bot
+# exec()s /bin/ping, that capability survives into the child whether /bin/ping
+# is a file-capability binary or a plain setuid one.
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
@@ -59,8 +60,11 @@ RestrictNamespaces=true
 # Outbound-only network access for a bot.
 IPAddressDeny=link-local multicast
 RestrictRealtime=true
-CapabilityBoundingSet=
-AmbientCapabilities=
+
+# CAP_NET_RAW is what /bin/ping needs to send ICMP. Without it (or with an
+# empty bounding set) execve("/bin/ping") fails with EPERM, breaking /ping.
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
 
 [Install]
 WantedBy=multi-user.target
