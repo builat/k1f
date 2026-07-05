@@ -1,29 +1,13 @@
-use teloxide::prelude::*;
+//! Help text shown by the «❓ Справка» button.
 
-use crate::commands::bot_init::ChatRequest;
+pub const HELP_MSG: &str = "\
+🔑 Ключ — управление ключом шифрования (set / change / clear).
+📦 Контекст — куски контекста для GPT (add / list / clear).
+💬 Спросить GPT — вопрос с использованием контекста и истории (история шифруется).
+🌐 Ping — проверить хост/IP/URL.
+🔮 UUID — сгенерировать uuid v4.
+👤 Профиль — ваш id.
+ Сбросить историю GPT можно командой /reset.
 
-const HELP_MSG: &str = "\
-/help — display this text.
-/username — echo client id.
-/gun N — generate up to 50 uuid v4 (one per line).
-/gus — generate a single uuid v4.
-/ping target — PING (8.8.8.8 | https://google.com | google.com)
-/gpt question — ask ChatGPT
+Данные шифруются per-user ключом (Argon2id из вашей passphrase).
 ";
-
-pub struct HelpCmd<'cr> {
-    pub chat_request: &'cr ChatRequest,
-}
-
-impl HelpCmd<'_> {
-    pub fn new(chat_request: &ChatRequest) -> HelpCmd<'_> {
-        HelpCmd { chat_request }
-    }
-
-    pub async fn respond(&self) -> Result<Message, teloxide::RequestError> {
-        self.chat_request
-            .bot
-            .send_message(self.chat_request.msg.chat.id, HELP_MSG)
-            .await
-    }
-}

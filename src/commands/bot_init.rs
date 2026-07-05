@@ -1,95 +1,105 @@
-use std::sync::LazyLock;
+use std::sync::Arc;
 
-use teloxide::{prelude::*, types::InputFile, utils::command::BotCommands};
+use teloxide::dispatching::dialogue::InMemStorage;
+use teloxide::{prelude::*, utils::command::BotCommands};
 
-use crate::commands::{
-    chat_gpt::AskGpt, help::HelpCmd, ping::PingCmd, user_info::UserInfo, uuid::UuidCmd,
-};
+use crate::commands::dialogue::{self, HandlerResult, State};
+use crate::menu;
+use crate::state::AppState;
 
+/// The only slash command left: `/start` opens the main menu. `/reset` clears
+/// GPT history without digging through menus.
 #[derive(BotCommands, Clone, Debug)]
-#[command(
-    rename_rule = "lowercase",
-    description = "These commands are supported:"
-)]
+#[command(rename_rule = "lowercase", description = "")]
 pub enum Command {
-    Help,
-    Username,
-    GuS,
-    GuN(u8),
-    Ping(String),
-    Gpt(String),
+    /// открыть главное меню
+    #[command(description = "open the main menu")]
+    Start,
+    /// очистить историю диалога с GPT
+    #[command(description = "clear the GPT dialogue history")]
+    Reset,
 }
 
 pub struct ChatRequest {
     pub bot: Bot,
     pub msg: Message,
+    pub state: Arc<AppState>,
 }
 
-static MASTER_TG_ID: LazyLock<i64> = LazyLock::new(|| {
-    std::env::var("MASTER_TG_ID")
-        .expect("MASTER_TG_ID must be set")
-        .parse::<i64>()
-        .expect("MASTER_TG_ID must be i64")
-});
-
-async fn cmd_answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
-    let chat_request = ChatRequest { bot, msg };
+/// `/start` and `/reset` in `State::Start`.
+async fn start_command(
+    bot: Bot,
+    msg: Message,
+    state: Arc<AppState>,
+    cmd: Command,
+) -> HandlerResult {
     match cmd {
-        Command::Help => HelpCmd::new(&chat_request).respond().await?,
-        Command::Username => UserInfo::new(&chat_request).respond().await?,
-        Command::Ping(target) => PingCmd::new(&chat_request, &target).respond().await?,
-        Command::GuS => UuidCmd::new(&chat_request, None).respond().await?,
-        Command::GuN(qty) => UuidCmd::new(&chat_request, Some(qty)).respond().await?,
-        Command::Gpt(question) => {
-            AskGpt::new(&chat_request, &Some(question))
-                .respond()
-                .await?
+        Command::Start => {
+            bot.send_message(msg.chat.id, "Привет! Выбери действие:")
+                .reply_markup(menu::main_menu())
+                .await?;
         }
-    };
-    Ok(())
-}
-
-async fn raw_messages(bot: Bot, msg: Message) -> ResponseResult<()> {
-    let chat_request = ChatRequest { bot, msg };
-    let chat_id = chat_request.msg.chat.id;
-
-    if let Some(text) = chat_request.msg.text() {
-        chat_request
-            .bot
-            .send_message(ChatId(*MASTER_TG_ID), text)
-            .await?;
-        chat_request
-            .bot
-            .send_message(chat_id, "Message sent. Thanks, unknown internet dweller.")
-            .await?;
-    } else if let Some(photos) = chat_request.msg.photo() {
-        // Telegram sends several photo sizes; the last is the largest.
-        let file_id = &photos.last().expect("photo array is non-empty").file.id;
-        chat_request
-            .bot
-            .send_photo(ChatId(*MASTER_TG_ID), InputFile::file_id(file_id.clone()))
-            .await?;
-        chat_request
-            .bot
-            .send_message(chat_id, "Photo sent. Thanks, unknown internet dweller.")
-            .await?;
+        Command::Reset => {
+            let tg_id = msg.chat.id.0;
+            let result = tokio::task::spawn_blocking(move || state.db.clear_messages(tg_id)).await;
+            let text = match result {
+                Ok(Ok(())) => "История диалога очищена.".to_string(),
+                Ok(Err(e)) => format!("Ошибка: {e}"),
+                Err(e) => format!("Task failed: {e}"),
+            };
+            bot.send_message(msg.chat.id, text)
+                .reply_markup(menu::main_menu())
+                .await?;
+        }
     }
-
     Ok(())
 }
 
-pub async fn init_bot(bot: Bot) {
-    // Handling of command messages
-    let cmd_branch = Update::filter_message()
-        .filter_command::<Command>()
-        .endpoint(cmd_answer);
+pub async fn init_bot(bot: Bot, state: Arc<AppState>) {
+    let storage = InMemStorage::<State>::new();
 
-    // Handling of raw messages
-    let raw_branch = Update::filter_message().endpoint(raw_messages);
+    // ---- message tree (text replies + /start + /reset) ----
+    let msg_start = dptree::case![State::Start]
+        .branch(
+            Update::filter_message()
+                .filter_command::<Command>()
+                .endpoint(start_command),
+        )
+        .branch(Update::filter_message().endpoint(dialogue::start_raw));
 
-    let handler = dptree::entry().branch(cmd_branch).branch(raw_branch);
+    let messages = Update::filter_message()
+        .enter_dialogue::<Message, InMemStorage<State>, State>()
+        .branch(msg_start)
+        .branch(
+            dptree::case![State::AwaitingPassphraseSet].endpoint(dialogue::receive_passphrase_set),
+        )
+        .branch(
+            dptree::case![State::AwaitingOldPassphrase].endpoint(dialogue::receive_old_passphrase),
+        )
+        .branch(
+            dptree::case![State::AwaitingNewPassphrase { old }]
+                .endpoint(dialogue::receive_new_passphrase),
+        )
+        .branch(
+            dptree::case![State::AwaitingContextText { action }]
+                .endpoint(dialogue::receive_context_text),
+        )
+        .branch(dptree::case![State::AwaitingPingTarget].endpoint(dialogue::receive_ping_target))
+        .branch(dptree::case![State::AwaitingGptQuestion].endpoint(dialogue::receive_gpt_question))
+        .branch(
+            dptree::case![State::AwaitingOwnerMessage].endpoint(dialogue::receive_owner_message),
+        )
+        .branch(dptree::case![State::AwaitingOwnerPhoto].endpoint(dialogue::receive_owner_photo));
+
+    // ---- callback-query tree (inline-button presses) ----
+    let callbacks = Update::filter_callback_query()
+        .enter_dialogue::<CallbackQuery, InMemStorage<State>, State>()
+        .endpoint(dialogue::callback_handler);
+
+    let handler = dptree::entry().branch(messages).branch(callbacks);
 
     Dispatcher::builder(bot, handler)
+        .dependencies(dptree::deps![storage, state])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
