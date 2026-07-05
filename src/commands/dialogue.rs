@@ -301,6 +301,7 @@ pub async fn receive_owner_message(bot: Bot, dialogue: MyDialogue, msg: Message)
             .await?;
         return Ok(());
     };
+    // Forward the text to the owner (MASTER_TG_ID) and acknowledge to the user.
     bot.send_message(ChatId(master_id()), format!("✉️ {text}"))
         .await?;
     bot.send_message(
@@ -634,12 +635,12 @@ pub async fn callback_handler(
 
         // ----- owner contact -----
         MenuAction::Msg => {
-            bot.send_message(chat_id, "Отправьте текст сообщения в ионосферу")
+            bot.send_message(chat_id, "Отправьте текст сообщения в ноосферу")
                 .await?;
             dialogue.update(State::AwaitingOwnerMessage).await?;
         }
         MenuAction::Photo => {
-            bot.send_message(chat_id, "Отправьте фото в ионосферу")
+            bot.send_message(chat_id, "Отправьте фото в ноосферу")
                 .await?;
             dialogue.update(State::AwaitingOwnerPhoto).await?;
         }

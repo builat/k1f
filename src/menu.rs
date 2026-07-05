@@ -129,14 +129,14 @@ pub fn main_menu() -> InlineKeyboardMarkup {
             btn("🔑 Ключ шифрования", MenuAction::Key),
             btn("📦 Контекст", MenuAction::Ctx),
         ],
-        vec![btn("💬 Спросить GPT", MenuAction::Gpt)],
+        vec![btn("💬 GPT", MenuAction::Gpt)],
         vec![
             btn("🌐 Ping", MenuAction::Ping),
             btn("🔮 UUID", MenuAction::Uuid),
         ],
         vec![
-            btn("✉️ Написать владельцу", MenuAction::Msg),
-            btn("📷 Фото владельцу", MenuAction::Photo),
+            btn("✉️ Текст в астрал", MenuAction::Msg),
+            btn("📷 Фото в астрал", MenuAction::Photo),
         ],
         vec![
             btn("👤 Профиль", MenuAction::Profile),
