@@ -92,7 +92,8 @@ pub async fn receive_passphrase_set(
     state: Arc<AppState>,
 ) -> HandlerResult {
     let Some(pass) = msg.text().map(str::to_owned) else {
-        bot.send_message(msg.chat.id, "Пожалуйста, отправьте текст.").await?;
+        bot.send_message(msg.chat.id, "Пожалуйста, отправьте текст.")
+            .await?;
         return Ok(());
     };
     let tg_id = msg.chat.id.0;
@@ -103,9 +104,12 @@ pub async fn receive_passphrase_set(
 
     match result {
         Ok(()) => {
-            bot.send_message(msg.chat.id, "Ключ установлен. Теперь доступны «Контекст» и «Спросить GPT».")
-                .reply_markup(menu::main_menu())
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                "Ключ установлен. Теперь доступны «Контекст» и «Спросить GPT».",
+            )
+            .reply_markup(menu::main_menu())
+            .await?;
             dialogue.exit().await?;
         }
         Err(KeyError::WrongPassphrase) => {
@@ -323,7 +327,7 @@ pub async fn receive_owner_photo(bot: Bot, dialogue: MyDialogue, msg: Message) -
         teloxide::types::InputFile::file_id(file_id.clone()),
     )
     .await?;
-    bot.send_message(msg.chat.id, "Фото отправлено владельцу.")
+    bot.send_message(msg.chat.id, "Фото отправлено в астрал.")
         .reply_markup(menu::main_menu())
         .await?;
     dialogue.exit().await?;
@@ -396,7 +400,7 @@ pub async fn callback_handler(
             let status = if has {
                 "Ключ загружен."
             } else {
-                "Ключ не задан."
+                "Ключ не задан. Либо произошла перезагрузка и ключ был стерт из памяти приложения, но его хэш сохранился в базе. Введите тот же ключ или смените его на новый."
             };
             edit_or_send(
                 &bot,
@@ -426,7 +430,7 @@ pub async fn callback_handler(
                     .await?;
                 dialogue.update(State::AwaitingOldPassphrase).await?;
             } else {
-                bot.send_message(chat_id, "Ключ не загружен. Сначала «Установить ключ».")
+                bot.send_message(chat_id, "Ключ не загружен. Сначала «Установить ключ». Если Вы уже загружали ключ и видите это сообщение, значит произошла перезагрузка и ключ был стерт из памяти приложения, но его хэш сохранился в базе. Введите тот же ключ или смените его на новый.")
                     .await?;
             }
         }
@@ -482,7 +486,7 @@ pub async fn callback_handler(
             .await?;
         }
         MenuAction::CtxAdd => {
-            bot.send_message(chat_id, "Отправьте текст куска контекста.")
+            bot.send_message(chat_id, "Отправьте текст чанка контекста.")
                 .await?;
             dialogue
                 .update(State::AwaitingContextText {
@@ -496,7 +500,7 @@ pub async fn callback_handler(
             })
             .await?;
             if seqs.is_empty() {
-                bot.send_message(chat_id, "Кусков контекста пока нет.")
+                bot.send_message(chat_id, "Чанков контекста пока нет.")
                     .reply_markup(menu::ctx_menu())
                     .await?;
             } else {
@@ -504,7 +508,7 @@ pub async fn callback_handler(
                     &bot,
                     chat_id,
                     regular,
-                    "Выберите кусок для просмотра:",
+                    "Выберите чанк для просмотра:",
                     menu::chunks_list_menu(&seqs),
                 )
                 .await?;
@@ -529,12 +533,12 @@ pub async fn callback_handler(
             .await?;
             match text {
                 Some(body) => {
-                    bot.send_message(chat_id, format!("Кусок #{seq}:\n\n{body}"))
+                    bot.send_message(chat_id, format!("Чанк #{seq}:\n\n{body}"))
                         .reply_markup(menu::chunk_viewer_menu(seq))
                         .await?;
                 }
                 None => {
-                    bot.send_message(chat_id, format!("Кусок {seq} не найден."))
+                    bot.send_message(chat_id, format!("Чанк {seq} не найден."))
                         .reply_markup(menu::ctx_menu())
                         .await?;
                 }
@@ -546,9 +550,9 @@ pub async fn callback_handler(
             })
             .await?;
             let text = if removed {
-                format!("Кусок {seq} удалён.")
+                format!("Чанк {seq} удалён.")
             } else {
-                format!("Кусок {seq} не найден.")
+                format!("Чанк {seq} не найден.")
             };
             // After deletion, refresh the list (or show the empty notice).
             let seqs = spawn_db(state.clone(), move |app| {
@@ -556,11 +560,11 @@ pub async fn callback_handler(
             })
             .await?;
             if seqs.is_empty() {
-                bot.send_message(chat_id, format!("{text} Кусков больше нет."))
+                bot.send_message(chat_id, format!("{text} Это была последняя часть."))
                     .reply_markup(menu::ctx_menu())
                     .await?;
             } else {
-                bot.send_message(chat_id, format!("{text} Остальные куски:"))
+                bot.send_message(chat_id, format!("{text} Остальные части промта:"))
                     .reply_markup(menu::chunks_list_menu(&seqs))
                     .await?;
             }
@@ -578,7 +582,7 @@ pub async fn callback_handler(
                 Ok(n)
             })
             .await?;
-            bot.send_message(chat_id, format!("Удалено кусков: {removed}."))
+            bot.send_message(chat_id, format!("Удалено чанков: {removed}."))
                 .reply_markup(menu::ctx_menu())
                 .await?;
         }
@@ -630,12 +634,12 @@ pub async fn callback_handler(
 
         // ----- owner contact -----
         MenuAction::Msg => {
-            bot.send_message(chat_id, "Отправьте текст сообщения для владельца бота.")
+            bot.send_message(chat_id, "Отправьте текст сообщения в ионосферу")
                 .await?;
             dialogue.update(State::AwaitingOwnerMessage).await?;
         }
         MenuAction::Photo => {
-            bot.send_message(chat_id, "Отправьте фото для владельца бота.")
+            bot.send_message(chat_id, "Отправьте фото в ионосферу")
                 .await?;
             dialogue.update(State::AwaitingOwnerPhoto).await?;
         }

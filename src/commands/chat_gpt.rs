@@ -48,7 +48,6 @@ struct OpenAiErrorBody {
 }
 
 /// Model used when GPT_MODEL is not set. Kept current with OpenAI's lineup;
-/// gpt-4.1 was retired on 2026-02-13.
 const DEFAULT_MODEL: &str = "gpt-5.5";
 
 pub struct AskGpt<'cr, 'pr> {
@@ -152,13 +151,13 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
             .choices
             .into_iter()
             .next()
-            .map(|c| format!("[GPT]: {}", c.message.content))
+            .map(|c| format!("{}", c.message.content))
             .unwrap_or_else(|| "No response found".to_string()))
     }
 }
 
 /// How many past turns to send to the model as memory.
-const HISTORY_LIMIT: u32 = 20;
+const HISTORY_LIMIT: u32 = 128;
 
 /// Assemble the `messages` array: user context (if any), then the recent
 /// decrypted history, then the new question. No implicit system prompt is
