@@ -156,8 +156,8 @@ pub fn key_menu() -> InlineKeyboardMarkup {
 
 pub fn ctx_menu() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new(vec![
-        vec![btn("Добавить кусок", MenuAction::CtxAdd)],
-        vec![btn("Просмотр кусков", MenuAction::CtxList)],
+        vec![btn("Добавить чанк", MenuAction::CtxAdd)],
+        vec![btn("Просмотр чанков", MenuAction::CtxList)],
         vec![btn("Удалить все", MenuAction::CtxClear)],
         vec![btn("← Назад", MenuAction::Main)],
     ])

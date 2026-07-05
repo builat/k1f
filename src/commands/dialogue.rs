@@ -261,7 +261,7 @@ pub async fn receive_ping_target(
         .respond()
         .await?;
     // Re-open the main menu for the next action.
-    bot.send_message(msg.chat.id, "Что дальше?")
+    bot.send_message(msg.chat.id, "...")
         .reply_markup(menu::main_menu())
         .await?;
     let _ = dialogue; // exit not strictly needed; state already Start.
@@ -287,7 +287,7 @@ pub async fn receive_gpt_question(
     crate::commands::chat_gpt::AskGpt::new(&chat_request, &Some(question))
         .respond()
         .await?;
-    bot.send_message(msg.chat.id, "Что дальше?")
+    bot.send_message(msg.chat.id, "...")
         .reply_markup(menu::main_menu())
         .await?;
     let _ = dialogue;
