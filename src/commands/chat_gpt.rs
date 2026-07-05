@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::{prelude::*, types::ParseMode};
 
 use crate::commands::bot_init::ChatRequest;
+use crate::state::AppState;
 
 #[derive(Serialize)]
 struct OpenAiRequest {
@@ -44,15 +47,7 @@ struct OpenAiErrorBody {
     message: String,
 }
 
-const SYSTEM_PROMPT: &str = "\
-1. Act like a slightly ironic expert.
-2. Skip the pleasantries—stick strictly to facts.
-3. Flag any points you’re unsure about separately.
-4. If the data are insufficient, say so.
-5. Assume the questioner might be incompetent.";
-
 /// Model used when GPT_MODEL is not set. Kept current with OpenAI's lineup;
-/// gpt-4.1 was retired on 2026-02-13.
 const DEFAULT_MODEL: &str = "gpt-5.5";
 
 pub struct AskGpt<'cr, 'pr> {
@@ -69,13 +64,39 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
     }
 
     pub async fn respond(&self) -> Result<Message, teloxide::RequestError> {
-        let answer = match self.prompt {
-            Some(prompt) => self
-                .ask_openai(prompt)
-                .await
-                .unwrap_or_else(|err| format!("Could not reach OpenAI: {err}")),
-            None => "No prompt provided".to_string(),
+        let tg_id = self.chat_request.msg.chat.id.0;
+        let state = self.chat_request.state.clone();
+
+        let Some(prompt) = self.prompt.as_deref() else {
+            return self.plain_reply("No prompt provided").await;
         };
+
+        if !state.has_key(tg_id) {
+            return self
+                .plain_reply("Set up your key first with /key set.")
+                .await;
+        }
+
+        // Build the message list: system prompt + context + history + question.
+        let messages = match build_messages(&state, tg_id, prompt).await {
+            Ok(m) => m,
+            Err(e) => {
+                return self
+                    .plain_reply(&format!("Could not load context/history: {e}"))
+                    .await;
+            }
+        };
+
+        let answer = self
+            .ask_openai(messages)
+            .await
+            .unwrap_or_else(|err| format!("Could not reach OpenAI: {err}"));
+
+        // Persist the exchange encrypted (only on a real answer, not on the
+        // error placeholder).
+        if let Some(stripped) = answer.strip_prefix("[GPT]: ") {
+            let _ = persist_exchange(&state, tg_id, prompt, stripped).await;
+        }
 
         self.chat_request
             .bot
@@ -87,7 +108,14 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
             .await
     }
 
-    async fn ask_openai(&self, prompt: &str) -> Result<String, anyhow::Error> {
+    async fn plain_reply(&self, text: &str) -> Result<Message, teloxide::RequestError> {
+        self.chat_request
+            .bot
+            .send_message(self.chat_request.msg.chat.id, text)
+            .await
+    }
+
+    async fn ask_openai(&self, messages: Vec<GptMessage>) -> Result<String, anyhow::Error> {
         let api_key = std::env::var("GPT_TOKEN")
             .expect("GPT_TOKEN must be set in the environment")
             .trim()
@@ -95,19 +123,7 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
         let model = std::env::var("GPT_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
         let client = Client::new();
-        let request = OpenAiRequest {
-            model: model.clone(),
-            messages: vec![
-                GptMessage {
-                    role: "user".to_string(),
-                    content: prompt.to_string(),
-                },
-                GptMessage {
-                    role: "developer".to_string(),
-                    content: SYSTEM_PROMPT.to_string(),
-                },
-            ],
-        };
+        let request = OpenAiRequest { model, messages };
 
         let response = client
             .post("https://api.openai.com/v1/chat/completions")
@@ -135,8 +151,129 @@ impl<'cr, 'pr> AskGpt<'cr, 'pr> {
             .choices
             .into_iter()
             .next()
-            .map(|c| format!("[GPT]: {}", c.message.content))
+            .map(|c| format!("{}", c.message.content))
             .unwrap_or_else(|| "No response found".to_string()))
+    }
+}
+
+/// How many past turns to send to the model as memory.
+const HISTORY_LIMIT: u32 = 128;
+
+/// Assemble the `messages` array: user context (if any), then the recent
+/// decrypted history, then the new question. No implicit system prompt is
+/// injected — only what the user explicitly stores as context is sent.
+async fn build_messages(
+    state: &Arc<AppState>,
+    tg_id: i64,
+    question: &str,
+) -> Result<Vec<GptMessage>, String> {
+    let mut msgs: Vec<GptMessage> = Vec::new();
+
+    // Context chunks (decrypted, concatenated in seq order).
+    let context = spawn_blocking_err(Arc::clone(state), move |app| -> Result<String, String> {
+        let chunks = app.db.chunks(tg_id).map_err(|e| e.to_string())?;
+        let joined = app
+            .with_key(tg_id, |key| {
+                let parts: Vec<String> = chunks
+                    .iter()
+                    .filter_map(|c| {
+                        String::from_utf8(crate::crypto::decrypt(key, &c.blob).ok()?).ok()
+                    })
+                    .collect();
+                parts.join("\n\n")
+            })
+            .unwrap_or_default();
+        Ok(joined)
+    })
+    .await?;
+    if !context.is_empty() {
+        msgs.push(GptMessage {
+            role: "system".to_string(),
+            content: format!("Additional context from the user:\n\n{context}"),
+        });
+    }
+
+    // Recent history (decrypted, oldest-first).
+    let history = spawn_blocking_err(
+        Arc::clone(state),
+        move |app| -> Result<Vec<(String, String)>, String> {
+            let rows = app
+                .db
+                .recent_messages(tg_id, HISTORY_LIMIT)
+                .map_err(|e| e.to_string())?;
+            let out = app
+                .with_key(tg_id, |key| {
+                    rows.iter()
+                        .filter_map(|m| {
+                            let text =
+                                String::from_utf8(crate::crypto::decrypt(key, &m.blob).ok()?)
+                                    .ok()?;
+                            Some((m.role.clone(), text))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Ok(out)
+        },
+    )
+    .await?;
+    for (role, text) in history {
+        msgs.push(GptMessage {
+            role,
+            content: text,
+        });
+    }
+
+    // The new question.
+    msgs.push(GptMessage {
+        role: "user".to_string(),
+        content: question.to_string(),
+    });
+    Ok(msgs)
+}
+
+/// Persist the user's question and the model's answer, encrypted, into the
+/// `messages` table.
+async fn persist_exchange(
+    state: &Arc<AppState>,
+    tg_id: i64,
+    question: &str,
+    answer: &str,
+) -> Result<(), String> {
+    let question = question.to_string();
+    let answer = answer.to_string();
+    spawn_blocking_err(Arc::clone(state), move |app| -> Result<(), String> {
+        let result: Result<(), String> = app
+            .with_key(tg_id, |key| -> Result<(), String> {
+                let q =
+                    crate::crypto::encrypt(key, question.as_bytes()).map_err(|e| e.to_string())?;
+                let a =
+                    crate::crypto::encrypt(key, answer.as_bytes()).map_err(|e| e.to_string())?;
+                app.db
+                    .append_message(tg_id, "user", &q)
+                    .map_err(|e| e.to_string())?;
+                app.db
+                    .append_message(tg_id, "assistant", &a)
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            })
+            .ok_or("No key loaded".to_string())?;
+        result
+    })
+    .await
+}
+
+/// Run a closure on the blocking pool with access to the whole `AppState`.
+/// Flattens both the JoinError and the closure's own error into a `String`,
+/// so callers need only one `?`.
+async fn spawn_blocking_err<T, F>(state: Arc<AppState>, f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppState) -> Result<T, String> + Send + 'static,
+{
+    match tokio::task::spawn_blocking(move || f(&state)).await {
+        Ok(inner) => inner,
+        Err(join_err) => Err(format!("Task failed: {join_err}")),
     }
 }
 
